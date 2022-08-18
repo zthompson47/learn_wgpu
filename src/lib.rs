@@ -1,3 +1,4 @@
+mod data;
 mod texture;
 
 #[cfg(target_arch = "wasm32")]
@@ -9,6 +10,8 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
+
+use crate::data::{INDICES, VERTICES};
 
 struct Camera {
     eye: cgmath::Point3<f32>,
@@ -55,11 +58,12 @@ struct State {
     diffuse_bind_group2: wgpu::BindGroup,
     diffuse_texture: texture::Texture,
     camera: Camera,
+    texture_bind_group_layout: wgpu::BindGroupLayout,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
+pub struct Vertex {
     position: [f32; 3],
     //color: [f32; 3],
     tex_coords: [f32; 2],
@@ -103,16 +107,15 @@ impl Vertex {
         color: [0.0, 0.0, 1.0],
     },
 ];*/
+/*
 #[rustfmt::skip]
 const VERTICES: &[Vertex] = &[
     // Pentagon
-    /*
-    Vertex { position: [-0.0868241, 0.49240386, 0.0], color: [0.5, 0.0, 0.5], },
-    Vertex { position: [-0.49513406, 0.06958647, 0.0], color: [0.5, 0.0, 0.5], },
-    Vertex { position: [-0.21918549, -0.44939706, 0.0], color: [0.5, 0.0, 0.5], },
-    Vertex { position: [0.35966998, -0.3473291, 0.0], color: [0.5, 0.0, 0.5], },
-    Vertex { position: [0.44147372, 0.2347359, 0.0], color: [0.5, 0.0, 0.5], },
-    */
+    //Vertex { position: [-0.0868241, 0.49240386, 0.0], color: [0.5, 0.0, 0.5], },
+    //Vertex { position: [-0.49513406, 0.06958647, 0.0], color: [0.5, 0.0, 0.5], },
+    //Vertex { position: [-0.21918549, -0.44939706, 0.0], color: [0.5, 0.0, 0.5], },
+    //Vertex { position: [0.35966998, -0.3473291, 0.0], color: [0.5, 0.0, 0.5], },
+    //Vertex { position: [0.44147372, 0.2347359, 0.0], color: [0.5, 0.0, 0.5], },
     Vertex { position: [-0.0868241, 0.49240386, 0.0], tex_coords: [0.4131759, 1.0 - 0.99240386], },
     Vertex { position: [-0.49513406, 0.06958647, 0.0], tex_coords: [0.0048659444, 1.0 - 0.56958647], },
     Vertex { position: [-0.21918549, -0.44939706, 0.0], tex_coords: [0.28081453, 1.0 - 0.05060294], },
@@ -153,6 +156,7 @@ const INDICES: &[u16] = &[
     0, 10, 11,
     0, 11, 12,
 ];
+*/
 
 impl State {
     async fn new(window: &Window) -> Self {
@@ -360,6 +364,7 @@ impl State {
             diffuse_texture,
             diffuse_bind_group2,
             camera,
+            texture_bind_group_layout,
         }
     }
 
@@ -418,6 +423,25 @@ impl State {
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+
+        /*
+        // Try to capture the current screen image to use as a texture!
+        let diffuse_bind_recurse = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &self.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.diffuse_texture.sampler), // TODO: hmm just grabbed this one...
+                },
+            ],
+            label: Some("diffuse_bind_recurse"),
+        });
+        */
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -443,6 +467,7 @@ impl State {
             // Image textures.
             if self.alt_image {
                 render_pass.set_bind_group(0, &self.diffuse_bind_group2, &[]);
+                //render_pass.set_bind_group(0, &diffuse_bind_recurse, &[]);
             } else {
                 render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
             }
