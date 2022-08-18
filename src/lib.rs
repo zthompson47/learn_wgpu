@@ -54,7 +54,7 @@ impl Vertex {
     }
 }
 
-const VERTICES: &[Vertex] = &[
+/*const VERTICES: &[Vertex] = &[
     Vertex {
         position: [0.0, 0.5, 0.0],
         color: [1.0, 0.0, 0.0],
@@ -67,37 +67,49 @@ const VERTICES: &[Vertex] = &[
         position: [0.5, -0.5, 0.0],
         color: [0.0, 0.0, 1.0],
     },
-];
-/*
+];*/
+#[rustfmt::skip]
 const VERTICES: &[Vertex] = &[
-    Vertex {
-        position: [-0.0868241, 0.49240386, 0.0],
-        color: [0.5, 0.0, 0.5],
-    },
-    Vertex {
-        position: [-0.49513406, 0.06958647, 0.0],
-        color: [0.5, 0.0, 0.5],
-    },
-    Vertex {
-        position: [-0.21918549, -0.44939706, 0.0],
-        color: [0.5, 0.0, 0.5],
-    },
-    Vertex {
-        position: [0.35966998, -0.3473291, 0.0],
-        color: [0.5, 0.0, 0.5],
-    },
-    Vertex {
-        position: [0.44147372, 0.2347359, 0.0],
-        color: [0.5, 0.0, 0.5],
-    },
+    // Pentagon
+    Vertex { position: [-0.0868241, 0.49240386, 0.0], color: [0.5, 0.0, 0.5], },
+    Vertex { position: [-0.49513406, 0.06958647, 0.0], color: [0.5, 0.0, 0.5], },
+    Vertex { position: [-0.21918549, -0.44939706, 0.0], color: [0.5, 0.0, 0.5], },
+    Vertex { position: [0.35966998, -0.3473291, 0.0], color: [0.5, 0.0, 0.5], },
+    Vertex { position: [0.44147372, 0.2347359, 0.0], color: [0.5, 0.0, 0.5], },
+    // Shape
+    Vertex { position: [0.0, 0.0, 0.0], color: [0.1, 0.1, 0.1], }, // 0
+    Vertex { position: [0.5, 0.2, 0.0], color: [0.8, 0.2, 0.1], }, // 1
+    Vertex { position: [0.5, 0.2, 0.0], color: [0.3, 0.6, 0.7], }, // 2
+    Vertex { position: [0.25, 0.4, 0.0], color: [0.9, 0.1, 0.1], }, // 3
+    Vertex { position: [0.0, 0.6, 0.0], color: [0.3, 0.9, 0.1], }, // 4
+    Vertex { position: [-0.25, 0.4, 0.0], color: [0.3, 0.2, 0.9], }, // 5
+    Vertex { position: [-0.5, 0.2, 0.0], color: [0.3, 0.2, 0.1], }, // 6
+    Vertex { position: [-0.6, 0.0, 0.0], color: [0.7, 0.7, 0.7], }, // 7
+    Vertex { position: [-0.5, -0.2, 0.0], color: [0.9, 0.8, 0.7], }, // 8
+    Vertex { position: [-0.25, -0.4, 0.0], color: [0.3, 0.2, 0.1], }, // 9
+    Vertex { position: [0.0, -0.6, 0.0], color: [0.8, 0.8, 0.9], }, // 10
+    Vertex { position: [0.25, -0.4, 0.0], color: [0.3, 0.7, 0.2], }, // 11
+    Vertex { position: [0.5, -0.2, 0.0], color: [0.8, 0.5, 0.3], }, // 12
 ];
-*/
 
 #[rustfmt::skip]
 const INDICES: &[u16] = &[
+    // Pentagon
     0, 1, 4,
     1, 2, 4,
     2, 3, 4,
+    // Shape
+    0, 1, 2,
+    0, 2, 3,
+    0, 3, 4,
+    0, 4, 5,
+    0, 5, 6,
+    0, 6, 7,
+    0, 7, 8,
+    0, 8, 9,
+    0, 9, 10,
+    0, 10, 11,
+    0, 11, 12,
 ];
 
 impl State {
@@ -327,16 +339,21 @@ impl State {
                 })],
                 depth_stencil_attachment: None,
             });
+
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
             // Choose which pipeline to run based on user input (space bar).
             if self.render2 {
                 render_pass.set_pipeline(&self.render_pipeline2);
+                render_pass.draw_indexed(9..self.num_indices, 5, 0..1);
             } else {
                 render_pass.set_pipeline(&self.render_pipeline);
+                render_pass.draw_indexed(0..9, 0, 0..1);
             }
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            //render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
-            render_pass.draw(0..self.num_vertices, 0..1);
+
+            // Old triangle
+            //render_pass.draw(0..self.num_vertices, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
