@@ -1,3 +1,5 @@
+mod texture;
+
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
@@ -8,6 +10,33 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
+struct Camera {
+    eye: cgmath::Point3<f32>,
+    target: cgmath::Point3<f32>,
+    up: cgmath::Vector3<f32>,
+    aspect: f32,
+    fovy: f32,
+    znear: f32,
+    zfar: f32,
+}
+
+#[rustfmt::skip]
+pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.5, 0.0,
+    0.0, 0.0, 0.5, 0.0,
+);
+
+impl Camera {
+    fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
+        let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
+        let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
+
+        OPENGL_TO_WGPU_MATRIX * proj * view
+    }
+}
+
 struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -16,19 +45,24 @@ struct State {
     size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
     render_pipeline: wgpu::RenderPipeline,
-    render_pipeline2: wgpu::RenderPipeline,
-    render2: bool,
+    //render_pipeline2: wgpu::RenderPipeline,
+    alt_shape: bool,
+    alt_image: bool,
     vertex_buffer: wgpu::Buffer,
-    num_vertices: u32,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
+    diffuse_bind_group: wgpu::BindGroup,
+    diffuse_bind_group2: wgpu::BindGroup,
+    diffuse_texture: texture::Texture,
+    camera: Camera,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 3],
-    color: [f32; 3],
+    //color: [f32; 3],
+    tex_coords: [f32; 2],
 }
 
 impl Vertex {
@@ -45,7 +79,8 @@ impl Vertex {
                 wgpu::VertexAttribute {
                     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x3,
+                    //format: wgpu::VertexFormat::Float32x3,
+                    format: wgpu::VertexFormat::Float32x2,
                 },
             ],
             // OR
@@ -71,25 +106,32 @@ impl Vertex {
 #[rustfmt::skip]
 const VERTICES: &[Vertex] = &[
     // Pentagon
+    /*
     Vertex { position: [-0.0868241, 0.49240386, 0.0], color: [0.5, 0.0, 0.5], },
     Vertex { position: [-0.49513406, 0.06958647, 0.0], color: [0.5, 0.0, 0.5], },
     Vertex { position: [-0.21918549, -0.44939706, 0.0], color: [0.5, 0.0, 0.5], },
     Vertex { position: [0.35966998, -0.3473291, 0.0], color: [0.5, 0.0, 0.5], },
     Vertex { position: [0.44147372, 0.2347359, 0.0], color: [0.5, 0.0, 0.5], },
+    */
+    Vertex { position: [-0.0868241, 0.49240386, 0.0], tex_coords: [0.4131759, 1.0 - 0.99240386], },
+    Vertex { position: [-0.49513406, 0.06958647, 0.0], tex_coords: [0.0048659444, 1.0 - 0.56958647], },
+    Vertex { position: [-0.21918549, -0.44939706, 0.0], tex_coords: [0.28081453, 1.0 - 0.05060294], },
+    Vertex { position: [0.35966998, -0.3473291, 0.0], tex_coords: [0.85967, 1.0 - 0.1526709], },
+    Vertex { position: [0.44147372, 0.2347359, 0.0], tex_coords: [0.9414737, 1.0 - 0.7347359], },
     // Shape
-    Vertex { position: [0.0, 0.0, 0.0], color: [0.1, 0.1, 0.1], }, // 0
-    Vertex { position: [0.5, 0.2, 0.0], color: [0.8, 0.2, 0.1], }, // 1
-    Vertex { position: [0.5, 0.2, 0.0], color: [0.3, 0.6, 0.7], }, // 2
-    Vertex { position: [0.25, 0.4, 0.0], color: [0.9, 0.1, 0.1], }, // 3
-    Vertex { position: [0.0, 0.6, 0.0], color: [0.3, 0.9, 0.1], }, // 4
-    Vertex { position: [-0.25, 0.4, 0.0], color: [0.3, 0.2, 0.9], }, // 5
-    Vertex { position: [-0.5, 0.2, 0.0], color: [0.3, 0.2, 0.1], }, // 6
-    Vertex { position: [-0.6, 0.0, 0.0], color: [0.7, 0.7, 0.7], }, // 7
-    Vertex { position: [-0.5, -0.2, 0.0], color: [0.9, 0.8, 0.7], }, // 8
-    Vertex { position: [-0.25, -0.4, 0.0], color: [0.3, 0.2, 0.1], }, // 9
-    Vertex { position: [0.0, -0.6, 0.0], color: [0.8, 0.8, 0.9], }, // 10
-    Vertex { position: [0.25, -0.4, 0.0], color: [0.3, 0.7, 0.2], }, // 11
-    Vertex { position: [0.5, -0.2, 0.0], color: [0.8, 0.5, 0.3], }, // 12
+    Vertex { position: [0.0, 0.0, 0.0], tex_coords: [0.4131759, 0.99240386], },
+    Vertex { position: [0.5, 0.2, 0.0], tex_coords: [0.0048659444, 0.56958647], },
+    Vertex { position: [0.5, 0.2, 0.0], tex_coords: [0.28081453, 0.05060294], },
+    Vertex { position: [0.25, 0.4, 0.0], tex_coords: [0.85967, 0.1526709], },
+    Vertex { position: [0.0, 0.6, 0.0], tex_coords: [0.9414737, 0.7347359], },
+    Vertex { position: [-0.25, 0.4, 0.0], tex_coords: [0.4131759, 0.99240386], },
+    Vertex { position: [-0.5, 0.2, 0.0], tex_coords: [0.0048659444, 0.56958647], },
+    Vertex { position: [-0.6, 0.0, 0.0], tex_coords: [0.28081453, 0.05060294], },
+    Vertex { position: [-0.5, -0.2, 0.0], tex_coords: [0.85967, 0.1526709], },
+    Vertex { position: [-0.25, -0.4, 0.0], tex_coords: [0.9414737, 0.7347359], },
+    Vertex { position: [0.0, -0.6, 0.0], tex_coords: [0.4131759, 0.99240386], },
+    Vertex { position: [0.25, -0.4, 0.0], tex_coords: [0.0048659444, 0.56958647], },
+    Vertex { position: [0.5, -0.2, 0.0], tex_coords: [0.28081453, 0.05060294], },
 ];
 
 #[rustfmt::skip]
@@ -153,8 +195,75 @@ impl State {
         };
         surface.configure(&device, &config);
 
+        // Create texture out of image.
+        let diffuse_bytes = include_bytes!("../gari.png");
+        let diffuse_texture =
+            texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "gari.png").unwrap();
+
+        let diffuse_bytes2 = include_bytes!("../happy-tree.png");
+        let diffuse_texture2 =
+            texture::Texture::from_bytes(&device, &queue, diffuse_bytes2, "gari.png").unwrap();
+
+        // Texture bind group.
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        // This should match the filterable field of the
+                        // corresponding Texture entry above.
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            });
+
+        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                },
+            ],
+            label: Some("diffuse_bind_group"),
+        });
+
+        let diffuse_bind_group2 = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture2.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_texture2.sampler),
+                },
+            ],
+            label: Some("diffuse_bind_group"),
+        });
+
+        // Background clear color.
         let clear_color = wgpu::Color::default();
 
+        // Load the shader.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
@@ -162,13 +271,13 @@ impl State {
         // OR:
         // let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
 
+        // Pipeline.
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&texture_bind_group_layout],
                 push_constant_ranges: &[],
             });
-
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -186,7 +295,6 @@ impl State {
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
-
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
@@ -199,7 +307,6 @@ impl State {
                 // Requires Features::CONSERVATIVE_RASTERIZATION
                 conservative: false,
             },
-
             depth_stencil: None,
             multisample: wgpu::MultisampleState {
                 count: 1,
@@ -209,57 +316,32 @@ impl State {
             multiview: None,
         });
 
-        let render_pipeline2 = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Color Triangle Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main2",
-                buffers: &[Vertex::desc()],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
-                polygon_mode: wgpu::PolygonMode::Fill,
-                // Requires Features::DEPTH_CLIP_CONTROL
-                unclipped_depth: false,
-                // Requires Features::CONSERVATIVE_RASTERIZATION
-                conservative: false,
-            },
-            depth_stencil: None, // 1.
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-        });
-
+        // Buffers.
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        let num_vertices = VERTICES.len() as u32;
-
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer"),
             contents: bytemuck::cast_slice(INDICES),
             usage: wgpu::BufferUsages::INDEX,
         });
         let num_indices = INDICES.len() as u32;
+
+        // Camera.
+        let camera = Camera {
+            // Poisiion camera one unit up and 2 units back.
+            eye: (0.0, 1.0, 2.0).into(),
+            // Have the camera look at the origin.
+            target: (0.0, 0.0, 0.0).into(),
+            // Which way is up.
+            up: cgmath::Vector3::unit_y(),
+            aspect: config.width as f32 / config.height as f32,
+            fovy: 45.0,
+            znear: 0.1,
+            zfar: 100.0,
+        };
 
         Self {
             surface,
@@ -269,12 +351,15 @@ impl State {
             size,
             clear_color,
             render_pipeline,
-            render_pipeline2,
-            render2: false,
+            alt_shape: false,
+            alt_image: false,
             vertex_buffer,
-            num_vertices,
             index_buffer,
             num_indices,
+            diffuse_bind_group,
+            diffuse_texture,
+            diffuse_bind_group2,
+            camera,
         }
     }
 
@@ -306,8 +391,20 @@ impl State {
                     },
                 ..
             } => {
-                self.render2 = !self.render2;
-                log::info!("SPACE_BAR changed render2 to {}", self.render2);
+                self.alt_shape = !self.alt_shape;
+                log::info!("SPACE_BAR changed render2 to {}", self.alt_shape);
+            }
+            WindowEvent::KeyboardInput {
+                input:
+                    KeyboardInput {
+                        state: ElementState::Pressed,
+                        virtual_keycode: Some(VirtualKeyCode::Tab),
+                        ..
+                    },
+                ..
+            } => {
+                self.alt_image = !self.alt_image;
+                log::info!("TAB changed render2 to {}", self.alt_image);
             }
             _ => return false,
         }
@@ -343,12 +440,20 @@ impl State {
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
+            // Image textures.
+            if self.alt_image {
+                render_pass.set_bind_group(0, &self.diffuse_bind_group2, &[]);
+            } else {
+                render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
+            }
+
+            render_pass.set_pipeline(&self.render_pipeline);
+
             // Choose which pipeline to run based on user input (space bar).
-            if self.render2 {
-                render_pass.set_pipeline(&self.render_pipeline2);
+            if self.alt_shape {
+                //render_pass.set_pipeline(&self.render_pipeline2);
                 render_pass.draw_indexed(9..self.num_indices, 5, 0..1);
             } else {
-                render_pass.set_pipeline(&self.render_pipeline);
                 render_pass.draw_indexed(0..9, 0, 0..1);
             }
 
