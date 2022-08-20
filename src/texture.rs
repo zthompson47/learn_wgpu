@@ -33,6 +33,16 @@ impl Texture {
         })
     }
 
+    pub fn from_dimensions(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        width: u32,
+        height: u32,
+        label: &str,
+    ) -> Result<Self> {
+        todo!()
+    }
+
     /// Create a `Texture` from a slice of bytes.
     pub fn from_bytes(
         device: &wgpu::Device,

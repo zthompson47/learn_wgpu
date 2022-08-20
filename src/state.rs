@@ -36,16 +36,12 @@ pub struct State {
     pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
     pub render_pipeline: wgpu::RenderPipeline,
-    //render_pipeline2: wgpu::RenderPipeline,
     pub alt_shape: bool,
     pub alt_image: bool,
+    pub tex_loop: bool,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub num_indices: u32,
-    //pub bg_gari: wgpu::BindGroup,
-    //pub bg_tree: wgpu::BindGroup,
-    //pub texture_bind_group_layout: wgpu::BindGroupLayout,
-    //pub texture_gari: Texture,
     pub camera: Camera,
     pub bind_group: TextureBindGroup,
     pub screenshot: bool,
@@ -193,6 +189,7 @@ impl State {
             render_pipeline,
             alt_shape: false,
             alt_image: false,
+            tex_loop: false,
             vertex_buffer,
             index_buffer,
             num_indices,
@@ -243,12 +240,17 @@ impl State {
             });
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            if self.alt_image {
+
+            if self.tex_loop {
+                render_pass.set_bind_group(0, self.bind_group.get("loop"), &[]);
+            } else if self.alt_image {
                 render_pass.set_bind_group(0, self.bind_group.get("tree"), &[]);
             } else {
                 render_pass.set_bind_group(0, self.bind_group.get("gari"), &[]);
             }
+
             render_pass.set_pipeline(&self.render_pipeline);
+
             if self.alt_shape {
                 render_pass.draw_indexed(9..self.num_indices, 5, 0..1);
             } else {
@@ -259,7 +261,7 @@ impl State {
         if self.screenshot {
             self.screenshot = false;
 
-            // Create output buffer with surface dimensions.
+            // Create output buffer for image with dimensions of surface.
             let dimensions =
                 BufferDimensions::new(self.size.width as usize, self.size.height as usize);
             let texture_extent = wgpu::Extent3d {
@@ -267,18 +269,16 @@ impl State {
                 height: dimensions.height as u32,
                 depth_or_array_layers: 1,
             };
-            let output_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            let image_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: None,
                 size: (dimensions.padded_bytes_per_row * dimensions.height) as u64,
                 usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-
-            // Register copy command with gpu.
             encoder.copy_texture_to_buffer(
                 output.texture.as_image_copy(),
                 wgpu::ImageCopyBuffer {
-                    buffer: &output_buffer,
+                    buffer: &image_buffer,
                     layout: wgpu::ImageDataLayout {
                         offset: 0,
                         bytes_per_row: Some(
@@ -291,6 +291,81 @@ impl State {
                 texture_extent,
             );
 
+            // Create buffer for to store a new texture for a bind group.
+            let new_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("new_texture_label"),
+                size: texture_extent,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            });
+
+            encoder.copy_texture_to_texture(
+                output.texture.as_image_copy(),
+                wgpu::ImageCopyTexture {
+                    texture: &new_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                texture_extent,
+            );
+
+            let bg_layout =
+                self.device
+                    .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        entries: &[
+                            // View
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 0,
+                                visibility: wgpu::ShaderStages::FRAGMENT,
+                                ty: wgpu::BindingType::Texture {
+                                    multisampled: false,
+                                    view_dimension: wgpu::TextureViewDimension::D2,
+                                    sample_type: wgpu::TextureSampleType::Float {
+                                        filterable: true,
+                                    },
+                                },
+                                count: None,
+                            },
+                            // Sampler
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 1,
+                                visibility: wgpu::ShaderStages::FRAGMENT,
+                                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                                count: None,
+                            },
+                        ],
+                        label: None,
+                    });
+            let new_texture_view = new_texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let new_sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                ..Default::default()
+            });
+            let bg_new_texture = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &bg_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&new_texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&new_sampler),
+                    },
+                ],
+                label: Some("diffuse_bind_group"),
+            });
+            self.bind_group.groups.insert("loop".to_string(), bg_new_texture);
+
             // Submit to gpu command queue.
             let command_buffer = encoder.finish();
             let index = self.queue.submit(Some(command_buffer));
@@ -299,7 +374,7 @@ impl State {
             pollster::block_on(create_png(
                 "out.png",
                 &self.device,
-                output_buffer,
+                image_buffer,
                 &dimensions,
                 index,
             ));

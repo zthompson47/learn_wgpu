@@ -147,6 +147,20 @@ fn input(state: &mut State, event: &WindowEvent) -> bool {
             state.screenshot = !state.screenshot;
             log::info!("P changed screenshot to {}", state.alt_image);
         }
+
+        WindowEvent::KeyboardInput {
+            input:
+                KeyboardInput {
+                    state: ElementState::Pressed,
+                    virtual_keycode: Some(VirtualKeyCode::L),
+                    ..
+                },
+            ..
+        } => {
+            state.tex_loop = !state.tex_loop;
+            log::info!("L changed tex_loop to {}", state.tex_loop);
+        }
+
         _ => return false,
     }
     true
