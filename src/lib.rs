@@ -1,5 +1,5 @@
 mod camera;
-pub use camera::Camera;
+pub use camera::{Camera, CameraController, CameraUniform};
 mod data;
 pub use data::{INDICES, VERTICES};
 mod state;
@@ -147,7 +147,6 @@ fn input(state: &mut State, event: &WindowEvent) -> bool {
             state.screenshot = !state.screenshot;
             log::info!("P changed screenshot to {}", state.alt_image);
         }
-
         WindowEvent::KeyboardInput {
             input:
                 KeyboardInput {
@@ -160,8 +159,19 @@ fn input(state: &mut State, event: &WindowEvent) -> bool {
             state.tex_loop = !state.tex_loop;
             log::info!("L changed tex_loop to {}", state.tex_loop);
         }
-
-        _ => return false,
+        WindowEvent::KeyboardInput {
+            input:
+                KeyboardInput {
+                    state: ElementState::Pressed,
+                    virtual_keycode: Some(VirtualKeyCode::R),
+                    ..
+                },
+            ..
+        } => {
+            state.rotate = !state.rotate;
+            log::info!("L changed rotate to {}", state.rotate);
+        }
+        _ => return state.camera_controller.process_events(event),
     }
     true
 }

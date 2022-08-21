@@ -2,7 +2,10 @@ use std::{fs::File, io::Write, mem::size_of};
 
 use wgpu::util::DeviceExt;
 
-use crate::{texture::TextureBindGroup, Camera, Texture, Vertex, INDICES, VERTICES};
+use crate::{
+    texture::TextureBindGroup, vertex::RotationUniform, Camera, CameraController, CameraUniform,
+    Texture, Vertex, INDICES, VERTICES,
+};
 
 struct BufferDimensions {
     width: usize,
@@ -43,8 +46,17 @@ pub struct State {
     pub index_buffer: wgpu::Buffer,
     pub num_indices: u32,
     pub camera: Camera,
+    pub camera_controller: CameraController,
+    pub camera_uniform: CameraUniform,
+    pub camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
     pub bind_group: TextureBindGroup,
     pub screenshot: bool,
+    pub rotation_buffer: wgpu::Buffer,
+    pub rotation_angle: cgmath::Rad<f32>,
+    pub rotation_uniform: RotationUniform,
+    rotation_bind_group: wgpu::BindGroup,
+    pub rotate: bool,
 }
 
 impl State {
@@ -89,6 +101,7 @@ impl State {
         };
         surface.configure(&device, &config);
 
+        // Load textures.
         let texture_gari = Texture::from_bytes(
             &device,
             &queue,
@@ -96,7 +109,6 @@ impl State {
             "gari.png",
         )
         .unwrap();
-
         let texture_tree = Texture::from_bytes(
             &device,
             &queue,
@@ -104,10 +116,80 @@ impl State {
             "tree.png",
         )
         .unwrap();
-
         let mut bind_group = TextureBindGroup::new(&device, Some("bind_group"));
         bind_group.add(&device, texture_gari, "gari");
         bind_group.add(&device, texture_tree, "tree");
+
+        // Create camera and set view projection.
+        let camera_controller = CameraController::new(0.2);
+        let camera = Camera::new(config.width as f32, config.height as f32);
+        let mut camera_uniform = CameraUniform::new();
+        camera_uniform.update_view_proj(&camera);
+
+        // Create camera buffer.
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[camera_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        // Create camera bind group.
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("camera_bind_group_layout"),
+            });
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+            label: Some("camera_bind_group"),
+        });
+
+        // Create rotation uniform.
+        let mut rotation_uniform = RotationUniform::new();
+        let rotation_angle = cgmath::Rad(0f32);
+        rotation_uniform.update_angle(rotation_angle);
+        let rotation_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Rotation Buffer"),
+            contents: bytemuck::cast_slice(&[rotation_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        // Create rotation group.
+        let rotation_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("rotation_bind_group_layout"),
+            });
+        let rotation_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &rotation_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: rotation_buffer.as_entire_binding(),
+            }],
+            label: Some("rotation_bind_group"),
+        });
 
         // Load the shader.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -117,11 +199,15 @@ impl State {
         // OR:
         // let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
 
-        // Pipeline.
+        // Create the render pipeline.
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&bind_group.layout],
+                bind_group_layouts: &[
+                    &bind_group.layout,
+                    &camera_bind_group_layout,
+                    &rotation_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -176,9 +262,6 @@ impl State {
         });
         let num_indices = INDICES.len() as u32;
 
-        // Camera.
-        let camera = Camera::new(config.width as f32, config.height as f32);
-
         Self {
             surface,
             device,
@@ -193,13 +276,18 @@ impl State {
             vertex_buffer,
             index_buffer,
             num_indices,
-            //texture_gari,
-            //bg_gari,
-            //bg_tree,
             camera,
-            //texture_bind_group_layout,
             bind_group,
             screenshot: false,
+            camera_uniform,
+            camera_buffer,
+            camera_bind_group,
+            camera_controller,
+            rotation_angle,
+            rotation_buffer,
+            rotation_uniform,
+            rotation_bind_group,
+            rotate: false,
         }
     }
 
@@ -212,7 +300,25 @@ impl State {
         }
     }
 
-    pub fn update(&mut self) {}
+    pub fn update(&mut self) {
+        self.camera_controller.update_camera(&mut self.camera);
+        self.camera_uniform.update_view_proj(&self.camera);
+        self.queue.write_buffer(
+            &self.camera_buffer,
+            0,
+            bytemuck::cast_slice(&[self.camera_uniform]),
+        );
+
+        if self.rotate {
+            self.rotation_angle += cgmath::Rad(0.05);
+            self.rotation_uniform.update_angle(self.rotation_angle);
+            self.queue.write_buffer(
+                &self.rotation_buffer,
+                0,
+                bytemuck::cast_slice(&[self.rotation_uniform]),
+            );
+        }
+    }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
@@ -238,6 +344,11 @@ impl State {
                 })],
                 depth_stencil_attachment: None,
             });
+
+            // Set up camera.
+            render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(2, &self.rotation_bind_group, &[]);
+
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
@@ -364,13 +475,15 @@ impl State {
                 ],
                 label: Some("diffuse_bind_group"),
             });
-            self.bind_group.groups.insert("loop".to_string(), bg_new_texture);
+            self.bind_group
+                .groups
+                .insert("loop".to_string(), bg_new_texture);
 
             // Submit to gpu command queue.
             let command_buffer = encoder.finish();
             let index = self.queue.submit(Some(command_buffer));
 
-            // Save image to file.
+            // Save image to file.  TODO blocks..  not working..
             pollster::block_on(create_png(
                 "out.png",
                 &self.device,

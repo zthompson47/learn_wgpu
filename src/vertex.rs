@@ -1,4 +1,3 @@
-
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
@@ -29,3 +28,23 @@ impl Vertex {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct RotationUniform {
+    view_proj: [[f32; 4]; 4],
+}
+
+impl RotationUniform {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        use cgmath::SquareMatrix;
+        Self {
+            view_proj: cgmath::Matrix4::identity().into(),
+        }
+    }
+
+    pub fn update_angle(&mut self, angle: cgmath::Rad<f32>) {
+        //self.view_proj = cgmath::Matrix4::from_angle_y(angle).into();
+        self.view_proj = cgmath::Matrix4::from_angle_z(angle).into();
+    }
+}
