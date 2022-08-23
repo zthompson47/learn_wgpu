@@ -1,13 +1,15 @@
+mod buffer;
+pub use buffer::*;
 mod camera;
-pub use camera::{Camera, CameraController, CameraUniform};
+pub use camera::*;
 mod data;
-pub use data::{INDICES, VERTICES};
+pub use data::*;
 mod state;
-pub use state::State;
+pub use state::*;
 mod texture;
-pub use texture::Texture;
+pub use texture::*;
 mod vertex;
-pub use vertex::Vertex;
+pub use vertex::*;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -132,8 +134,8 @@ fn input(state: &mut State, event: &WindowEvent) -> bool {
                 },
             ..
         } => {
-            state.alt_image = !state.alt_image;
-            log::info!("TAB changed render2 to {}", state.alt_image);
+            state.tab = !state.tab;
+            log::info!("TAB changed tab to {}", state.tab);
         }
         WindowEvent::KeyboardInput {
             input:
