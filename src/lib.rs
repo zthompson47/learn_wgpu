@@ -7,10 +7,11 @@ pub use data::*;
 mod depth;
 pub use depth::*;
 pub mod model;
+mod resources;
 mod state;
-pub use state::*;
+use state::State;
 mod texture;
-pub use texture::*;
+//pub use texture::*;
 mod vertex;
 pub use vertex::*;
 

@@ -1,7 +1,7 @@
 use wgpu::util::DeviceExt;
 
 use crate::model::{ModelVertex, Vertex};
-use crate::{Texture, DEPTH_INDICES, DEPTH_VERTICES};
+use crate::{texture::Texture, DEPTH_INDICES, DEPTH_VERTICES};
 
 pub struct DepthPass {
     pub texture: Texture,

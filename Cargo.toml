@@ -20,6 +20,7 @@ cgmath = "0.18.0"
 futures-intrusive = "0.4.0"
 png = "0.17.5"
 anyhow = "1.0.62"
+tobj = { version = "3.2.3", features = ["async"] }
 
 [dependencies.image]
 version = "0.24.3"
@@ -32,6 +33,7 @@ crate-type = ["cdylib", "rlib"]
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.6"
 console_log = "0.2.0"
+reqwest = { version = "0.11" }
 wgpu = { version = "0.13", features = ["webgl"]}
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4.30"
@@ -39,4 +41,5 @@ web-sys = { version = "0.3", features = [
     "Document",
     "Window",
     "Element",
+    "Location",
 ]}
