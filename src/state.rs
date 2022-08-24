@@ -3,12 +3,11 @@ use std::{fs::File, io::Write};
 use cgmath::prelude::*;
 use wgpu::util::DeviceExt;
 
+use crate::model::{ModelVertex, Vertex};
 use crate::{
-    buffer::BufferDimensions,
-    texture::TextureBindGroup,
-    vertex::{Instance, RotationUniform},
-    Camera, CameraController, CameraUniform, InstanceRaw, Texture, Vertex, INDICES,
-    INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, VERTICES,
+    BufferDimensions, Camera, CameraController, CameraUniform, DepthPass, Instance, InstanceRaw,
+    RotationUniform, Texture, TextureBindGroup, INDICES, INSTANCE_DISPLACEMENT,
+    NUM_INSTANCES_PER_ROW, VERTICES,
 };
 
 pub struct State {
@@ -30,7 +29,7 @@ pub struct State {
     pub camera_uniform: CameraUniform,
     pub camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    pub bind_group: TextureBindGroup,
+    pub texture_bind_group: TextureBindGroup,
     pub screenshot: bool,
     pub rotation_buffer: wgpu::Buffer,
     pub rotation_angle: cgmath::Rad<f32>,
@@ -39,11 +38,12 @@ pub struct State {
     pub rotate: bool,
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
-    depth_texture: Texture,
+    //depth_texture: Texture,
     pub tab: bool,
     pub tab_index: usize,
     //depth_bind_group_layout: wgpu::BindGroupLayout,
     //depth_bind_group: wgpu::BindGroup,
+    depth_pass: DepthPass,
 }
 
 impl State {
@@ -118,11 +118,11 @@ impl State {
             "athe-cropped-rotated.png",
         )
         .unwrap();
-        let mut bind_group = TextureBindGroup::new(&device, Some("bind_group"));
-        bind_group.add(&device, texture_gari, "gari");
-        bind_group.add(&device, texture_tree, "tree");
-        bind_group.add(&device, texture_baba, "baba");
-        bind_group.add(&device, texture_athe, "athe");
+        let mut texture_bind_group = TextureBindGroup::new(&device, Some("texture_bind_group"));
+        texture_bind_group.add(&device, texture_gari, "gari");
+        texture_bind_group.add(&device, texture_tree, "tree");
+        texture_bind_group.add(&device, texture_baba, "baba");
+        texture_bind_group.add(&device, texture_athe, "athe");
 
         // Create camera and set view projection.
         let camera_controller = CameraController::new(0.2);
@@ -236,78 +236,17 @@ impl State {
         // let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
 
         // Depth texture.
-        let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
-
-        /*
-        let depth_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    // View
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        },
-                        count: None,
-                    },
-                    // Sampler
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
-                        count: None,
-                    },
-                ],
-                label: Some("depth_bind_group_layout"),
-            });
-        let depth_bind_group = depth_texture.create_bind_group(
-            &device,
-            &depth_bind_group_layout,
-            Some("depth_bind_group"),
-        );
-        */
-
-        /*
-        let depth_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-        */
-
-        /*
-        let depth_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &depth_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&depth_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&depth_sampler),
-                },
-            ],
-            label: Some("diffuse_bind_group"),
-        });
-        */
+        //let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
+        let depth_pass = DepthPass::new(&device, &config);
 
         // Render pipeline layout.
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
-                    &bind_group.layout,
+                    &texture_bind_group.layout,
                     &camera_bind_group_layout,
                     &rotation_bind_group_layout,
-                    //&depth_bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -318,7 +257,7 @@ impl State {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex::desc(), InstanceRaw::desc()],
+                buffers: &[ModelVertex::desc(), InstanceRaw::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -385,7 +324,7 @@ impl State {
             index_buffer,
             num_indices,
             camera,
-            bind_group,
+            texture_bind_group,
             screenshot: false,
             camera_uniform,
             camera_buffer,
@@ -398,11 +337,9 @@ impl State {
             rotate: false,
             instances,
             instance_buffer,
-            depth_texture,
-            //depth_bind_group_layout,
-            //depth_bind_group,
             tab: false,
             tab_index: 0,
+            depth_pass,
         }
     }
 
@@ -413,10 +350,10 @@ impl State {
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
         }
+        self.depth_pass.resize(&self.device, &self.config);
 
-        self.depth_texture =
-            Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
-        // FIXME need to make new bind group here
+        //self.depth_texture =
+        //    Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
     }
 
     pub fn update(&mut self) {
@@ -461,7 +398,8 @@ impl State {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture.view,
+                    //view: &self.depth_texture.view,
+                    view: &self.depth_pass.texture.view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: true,
@@ -488,7 +426,7 @@ impl State {
                 self.tab = false;
                 self.tab_index = (self.tab_index + 1) % labels.len();
             }
-            render_pass.set_bind_group(0, self.bind_group.get(labels[self.tab_index]), &[]);
+            render_pass.set_bind_group(0, self.texture_bind_group.get(labels[self.tab_index]), &[]);
 
             render_pass.set_pipeline(&self.render_pipeline);
 
@@ -499,6 +437,8 @@ impl State {
                 render_pass.draw_indexed(0..9, 0, 0..self.instances.len() as u32);
             }
         }
+
+        self.depth_pass.render(&view, &mut encoder);
 
         if self.screenshot {
             self.screenshot = false;
@@ -618,7 +558,7 @@ impl State {
             ],
             label: Some("diffuse_bind_group"),
         });
-        self.bind_group
+        self.texture_bind_group
             .groups
             .insert("loop".to_string(), bg_new_texture);
 

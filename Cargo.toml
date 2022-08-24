@@ -3,6 +3,11 @@ name = "learn_wgpu"
 version = "0.1.0"
 edition = "2021"
 
+[build-dependencies]
+anyhow = "1.0.62"
+fs_extra = "1.2.0"
+glob = "0.3.0"
+
 [dependencies]
 bytemuck = { version = "1.12.1", features = ["derive"] }
 cfg-if = "1.0.0"
@@ -11,10 +16,10 @@ log = "0.4.17"
 pollster = "0.2.5"
 wgpu = "0.13"
 winit = "0.27.2"
-anyhow = "1.0.62"
 cgmath = "0.18.0"
 futures-intrusive = "0.4.0"
 png = "0.17.5"
+anyhow = "1.0.62"
 
 [dependencies.image]
 version = "0.24.3"
