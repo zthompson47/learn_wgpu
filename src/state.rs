@@ -3,12 +3,28 @@ use std::{fs::File, io::Write};
 use cgmath::prelude::*;
 use wgpu::util::DeviceExt;
 
-use crate::model::{ModelVertex, Vertex};
 use crate::{
-    model, resources, texture::Texture, texture::TextureBindGroup, BufferDimensions, Camera,
-    CameraController, CameraUniform, DepthPass, Instance, InstanceRaw, RotationUniform, INDICES,
-    INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, VERTICES,
+    buffer::BufferDimensions,
+    camera::{Camera, CameraController, CameraUniform},
+    data::{INDICES, NUM_INSTANCES_PER_ROW, VERTICES},
+    depth::{DepthPass, RenderPass},
+    model::{self, DrawModel, ModelVertex, Vertex},
+    resources,
+    texture::{Texture, TextureBindGroup},
+    vertex::{Instance, InstanceRaw, RotationUniform},
 };
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct KeyState {
+    pub show_depth: bool,
+    pub alt_shape: bool,
+    pub alt_image: bool,
+    pub tex_loop: bool,
+    pub screenshot: bool,
+    pub rotate: bool,
+    pub tab: bool,
+    pub tab_index: usize,
+}
 
 pub struct State {
     pub clear_color: wgpu::Color,
@@ -18,9 +34,6 @@ pub struct State {
     pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
     pub render_pipeline: wgpu::RenderPipeline,
-    pub alt_shape: bool,
-    pub alt_image: bool,
-    pub tex_loop: bool,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub num_indices: u32,
@@ -30,18 +43,21 @@ pub struct State {
     pub camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     pub texture_bind_group: TextureBindGroup,
-    pub screenshot: bool,
+
     pub rotation_buffer: wgpu::Buffer,
     pub rotation_angle: cgmath::Rad<f32>,
     pub rotation_uniform: RotationUniform,
     rotation_bind_group: wgpu::BindGroup,
-    pub rotate: bool,
+
+    //pub gradient_buffer: wgpu::Buffer,
+    //pub gradient_source: vertex::GradientSource,
+    //gradient_bind_group: wgpu::BindGroup,
+
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
-    pub tab: bool,
-    pub tab_index: usize,
     depth_pass: DepthPass,
     obj_model: model::Model,
+    pub keys: KeyState,
 }
 
 impl State {
@@ -193,6 +209,36 @@ impl State {
             label: Some("rotation_bind_group"),
         });
 
+        /*
+        let gradient_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Gradient Buffer"),
+            contents: bytemuck::cast_slice(&[gradient_source.uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let gradient_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("gradient_bind_group_layout"),
+            });
+        let gradient_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &gradient_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: gradient_buffer.as_entire_binding(),
+            }],
+            label: Some("gradient_bind_group"),
+        });
+        */
+
         // Create instances.
         const SPACE_BETWEEN: f32 = 3.0;
         let instances = (0..NUM_INSTANCES_PER_ROW)
@@ -200,7 +246,7 @@ impl State {
                 (0..NUM_INSTANCES_PER_ROW).map(move |x| {
                     let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
                     let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
-                    let position = cgmath::Vector3 { x, y: 0.0, z }; // - INSTANCE_DISPLACEMENT;
+                    let position = cgmath::Vector3 { x, y: 0.0, z };
 
                     let rotation = if position.is_zero() {
                         // this is needed so an object at (0, 0, 0) won't get scaled to zero
@@ -344,15 +390,11 @@ impl State {
             size,
             clear_color,
             render_pipeline,
-            alt_shape: false,
-            alt_image: false,
-            tex_loop: false,
             vertex_buffer,
             index_buffer,
             num_indices,
             camera,
             texture_bind_group,
-            screenshot: false,
             camera_uniform,
             camera_buffer,
             camera_bind_group,
@@ -361,13 +403,14 @@ impl State {
             rotation_buffer,
             rotation_uniform,
             rotation_bind_group,
-            rotate: false,
             instances,
             instance_buffer,
-            tab: false,
-            tab_index: 0,
             depth_pass,
             obj_model,
+            keys: KeyState::default(),
+            //gradient_buffer,
+            //gradient_source,
+            //gradient_bind_group,
         }
     }
 
@@ -379,9 +422,6 @@ impl State {
             self.surface.configure(&self.device, &self.config);
         }
         self.depth_pass.resize(&self.device, &self.config);
-
-        //self.depth_texture =
-        //    Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
     }
 
     pub fn update(&mut self) {
@@ -393,7 +433,7 @@ impl State {
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
 
-        if self.rotate {
+        if self.keys.rotate {
             self.rotation_angle += cgmath::Rad(0.05);
             self.rotation_uniform.update_angle(self.rotation_angle);
             self.queue.write_buffer(
@@ -402,6 +442,8 @@ impl State {
                 bytemuck::cast_slice(&[self.rotation_uniform]),
             );
         }
+
+        self.depth_pass.update(&self.queue);
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -436,65 +478,55 @@ impl State {
                 }),
             });
 
-            // Set up camera.
+            // Camera.
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             render_pass.set_bind_group(2, &self.rotation_bind_group, &[]);
 
-            // Store depth map for rendering to surface.
-            //render_pass.set_bind_group(3, &self.depth_bind_group, &[]);
-
-            // Vertex, instance, and index buffers.
+            // Mesh.
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-            // Tab through different textures.
+            // Tab through textures.
             let labels = ["tree", "gari", "baba", "athe", "stone"];
-            if self.tab {
-                self.tab = false;
-                self.tab_index = (self.tab_index + 1) % labels.len();
+            if self.keys.tab {
+                self.keys.tab = false;
+                self.keys.tab_index = (self.keys.tab_index + 1) % labels.len();
             }
-
-            use model::DrawModel;
             let mesh = &self.obj_model.meshes[0];
             let material = &self.obj_model.materials[mesh.material];
-            if labels[self.tab_index] == "stone" {
+            if labels[self.keys.tab_index] == "stone" {
                 render_pass.set_bind_group(0, &material.bind_group, &[]);
             } else {
                 render_pass.set_bind_group(
                     0,
-                    self.texture_bind_group.get(labels[self.tab_index]),
+                    self.texture_bind_group.get(labels[self.keys.tab_index]),
                     &[],
                 );
             };
 
             render_pass.set_pipeline(&self.render_pipeline);
 
-            // Draw primitive shape.
-            if self.alt_shape {
-                /*
-                render_pass.set_bind_group(
-                    0,
-                    self.texture_bind_group.get(labels[self.tab_index]),
-                    &[],
-                );
-                */
+            // Draw.
+            if self.keys.alt_shape {
                 render_pass.draw_indexed(9..self.num_indices, 5, 0..self.instances.len() as u32);
             } else {
-                //render_pass.draw_indexed(0..9, 0, 0..self.instances.len() as u32);
-                render_pass.draw_mesh_instanced(
-                    mesh,
-                    material,
+                render_pass.draw_model_instanced(
+                    &self.obj_model,
                     0..self.instances.len() as u32,
                     &self.camera_bind_group,
                 );
             }
         }
 
-        self.depth_pass.render(&view, &mut encoder);
+        // Show depth mask in corner of screen.
+        if self.keys.show_depth {
+            self.depth_pass.render(&view, &mut encoder);
+        }
 
-        if self.screenshot {
-            self.screenshot = false;
+        // Screenshot.  FIXME: too slow and need to convert colorspace
+        if self.keys.screenshot {
+            self.keys.screenshot = false;
             self.create_screenshot(encoder, &output);
         } else {
             let command_buffer = encoder.finish();

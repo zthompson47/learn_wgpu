@@ -1,27 +1,24 @@
 mod buffer;
-pub use buffer::*;
 mod camera;
-pub use camera::*;
 mod data;
-pub use data::*;
 mod depth;
-pub use depth::*;
-pub mod model;
+mod model;
+mod render;
 mod resources;
 mod state;
-use state::State;
 mod texture;
-//pub use texture::*;
 mod vertex;
-pub use vertex::*;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
+
+use state::State;
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
@@ -121,62 +118,37 @@ fn input(state: &mut State, event: &WindowEvent) -> bool {
             input:
                 KeyboardInput {
                     state: ElementState::Pressed,
-                    virtual_keycode: Some(VirtualKeyCode::Space),
+                    virtual_keycode: Some(key),
                     ..
                 },
             ..
-        } => {
-            state.alt_shape = !state.alt_shape;
-            log::info!("SPACE_BAR changed render2 to {}", state.alt_shape);
-        }
-        WindowEvent::KeyboardInput {
-            input:
-                KeyboardInput {
-                    state: ElementState::Pressed,
-                    virtual_keycode: Some(VirtualKeyCode::Tab),
-                    ..
-                },
-            ..
-        } => {
-            state.tab = !state.tab;
-            log::info!("TAB changed tab to {}", state.tab);
-        }
-        WindowEvent::KeyboardInput {
-            input:
-                KeyboardInput {
-                    state: ElementState::Pressed,
-                    virtual_keycode: Some(VirtualKeyCode::P),
-                    ..
-                },
-            ..
-        } => {
-            state.screenshot = !state.screenshot;
-            log::info!("P changed screenshot to {}", state.alt_image);
-        }
-        WindowEvent::KeyboardInput {
-            input:
-                KeyboardInput {
-                    state: ElementState::Pressed,
-                    virtual_keycode: Some(VirtualKeyCode::L),
-                    ..
-                },
-            ..
-        } => {
-            state.tex_loop = !state.tex_loop;
-            log::info!("L changed tex_loop to {}", state.tex_loop);
-        }
-        WindowEvent::KeyboardInput {
-            input:
-                KeyboardInput {
-                    state: ElementState::Pressed,
-                    virtual_keycode: Some(VirtualKeyCode::R),
-                    ..
-                },
-            ..
-        } => {
-            state.rotate = !state.rotate;
-            log::info!("L changed rotate to {}", state.rotate);
-        }
+        } => match key {
+            VirtualKeyCode::Space => {
+                state.keys.alt_shape = !state.keys.alt_shape;
+                log::info!("SPACE_BAR changed render2 to {}", state.keys.alt_shape);
+            }
+            VirtualKeyCode::Tab => {
+                state.keys.tab = !state.keys.tab;
+                log::info!("TAB changed tab to {}", state.keys.tab);
+            }
+            VirtualKeyCode::P => {
+                state.keys.screenshot = !state.keys.screenshot;
+                log::info!("P changed screenshot to {}", state.keys.alt_image);
+            }
+            VirtualKeyCode::L => {
+                state.keys.tex_loop = !state.keys.tex_loop;
+                log::info!("L changed tex_loop to {}", state.keys.tex_loop);
+            }
+            VirtualKeyCode::R => {
+                state.keys.rotate = !state.keys.rotate;
+                log::info!("L changed rotate to {}", state.keys.rotate);
+            }
+            VirtualKeyCode::Z => {
+                state.keys.show_depth = !state.keys.show_depth;
+                log::info!("Z changed show_depth to {}", state.keys.show_depth);
+            }
+            _ => return state.camera_controller.process_events(event),
+        },
         _ => return state.camera_controller.process_events(event),
     }
     true

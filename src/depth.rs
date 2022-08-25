@@ -1,7 +1,15 @@
 use wgpu::util::DeviceExt;
 
 use crate::model::{ModelVertex, Vertex};
-use crate::{texture::Texture, DEPTH_INDICES, DEPTH_VERTICES};
+use crate::vertex;
+use crate::{data::DEPTH_INDICES, data::DEPTH_VERTICES, texture::Texture};
+
+pub trait RenderPass {
+    fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self;
+    fn resize(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration);
+    fn render(&mut self, view: &wgpu::TextureView, encoder: &mut wgpu::CommandEncoder);
+    fn update(&mut self, _queue: &wgpu::Queue) {}
+}
 
 pub struct DepthPass {
     pub texture: Texture,
@@ -10,10 +18,11 @@ pub struct DepthPass {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub render_pipeline: wgpu::RenderPipeline,
+    pub gradient: vertex::GradientSource,
 }
 
-impl DepthPass {
-    pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
+impl RenderPass for DepthPass {
+    fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
         let texture = Texture::create_depth_texture(device, config, "depth_pass");
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("depth_pass.bind_group"),
@@ -47,11 +56,16 @@ impl DepthPass {
             contents: bytemuck::cast_slice(DEPTH_INDICES),
             usage: wgpu::BufferUsages::INDEX,
         });
+
+        let gradient = vertex::GradientSource::new(device);
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("depth_pass.pipe_line_layout"),
-            bind_group_layouts: &[&layout],
+            bind_group_layouts: &[&layout, &gradient.layout],
+            //bind_group_layouts: &[&layout],
             push_constant_ranges: &[],
         });
+
         let shader_depth = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("depth_pass.shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader_depth.wgsl").into()),
@@ -102,10 +116,15 @@ impl DepthPass {
             vertex_buffer,
             index_buffer,
             render_pipeline,
+            gradient,
         }
     }
 
-    pub fn resize(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) {
+    fn update(&mut self, queue: &wgpu::Queue) {
+        self.gradient.update(queue);
+    }
+
+    fn resize(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) {
         self.texture = Texture::create_depth_texture(device, config, "depth_pass.texture_resized");
         self.bind_group = self.texture.create_bind_group(
             device,
@@ -114,7 +133,7 @@ impl DepthPass {
         );
     }
 
-    pub fn render(&mut self, view: &wgpu::TextureView, encoder: &mut wgpu::CommandEncoder) {
+    fn render(&mut self, view: &wgpu::TextureView, encoder: &mut wgpu::CommandEncoder) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("depth_pass.render_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -129,6 +148,7 @@ impl DepthPass {
         });
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &self.bind_group, &[]);
+        render_pass.set_bind_group(1, &self.gradient.bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..(DEPTH_INDICES.len() as u32), 0, 0..1);

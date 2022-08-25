@@ -1,3 +1,5 @@
+use wgpu::util::DeviceExt;
+use crate::vertex;
 /*
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -48,6 +50,102 @@ impl RotationUniform {
     pub fn update_angle(&mut self, angle: cgmath::Rad<f32>) {
         //self.view_proj = cgmath::Matrix4::from_angle_y(angle).into();
         self.view_proj = cgmath::Matrix4::from_angle_z(angle).into();
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct GradientUniform {
+    color: [f32; 4],
+}
+
+pub struct GradientSource {
+    pub uniform: GradientUniform,
+    gradient: colorgrad::Gradient,
+    index: f64,
+    //ascending: bool,
+    pub layout: wgpu::BindGroupLayout,
+    pub bind_group: wgpu::BindGroup,
+    pub gradient_buffer: wgpu::Buffer,
+}
+
+impl GradientSource {
+    #[allow(clippy::new_without_default)]
+    pub fn new(device: &wgpu::Device) -> Self {
+
+        let uniform = vertex::GradientUniform::default();
+        let gradient_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Gradient Buffer"),
+            contents: bytemuck::cast_slice(&[uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("gradient_bind_group_layout"),
+            });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: gradient_buffer.as_entire_binding(),
+            }],
+            label: Some("gradient_bind_group"),
+        });
+
+        Self {
+            uniform,
+            gradient: colorgrad::rainbow(),
+            index: 0.0,
+            bind_group,
+            layout,
+            gradient_buffer,
+            //ascending: true,
+        }
+    }
+
+    pub fn update(&mut self, queue: &wgpu::Queue) {
+        let color = self.gradient.at(self.index);
+        self.uniform.color = [
+            color.r as f32,
+            color.g as f32,
+            color.b as f32,
+            color.a as f32,
+        ];
+
+        self.index = (self.index + 0.01) % 1.0;
+
+        /*
+        if self.ascending {
+            self.index += 0.01;
+        } else {
+            self.index -= 0.01;
+        }
+        if self.index >= 1.0 {
+            self.index = 1.0;
+            self.ascending = false;
+        } else if self.index <= 0.0 {
+            self.index = 0.0;
+            self.ascending = true;
+        }
+        */
+
+        //self.index = (self.index + 0.01) % 1.0;
+
+        queue.write_buffer(
+            &self.gradient_buffer,
+            0,
+            bytemuck::cast_slice(&[self.uniform]),
+        );
     }
 }
 
