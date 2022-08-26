@@ -5,9 +5,10 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     buffer::BufferDimensions,
-    camera::{Camera, CameraController, CameraUniform},
+    camera::CameraBundle,
     data::{INDICES, NUM_INSTANCES_PER_ROW, VERTICES},
     depth::{DepthPass, RenderPass},
+    light::LightUniform,
     model::{self, DrawModel, ModelVertex, Vertex},
     resources,
     texture::{Texture, TextureBindGroup},
@@ -26,38 +27,38 @@ pub struct KeyState {
     pub tab_index: usize,
 }
 
+#[rustfmt::skip]
 pub struct State {
     pub clear_color: wgpu::Color,
     pub size: winit::dpi::PhysicalSize<u32>,
     pub surface: wgpu::Surface,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
+
     pub config: wgpu::SurfaceConfiguration,
+
     pub render_pipeline: wgpu::RenderPipeline,
+    pub texture_bind_group: TextureBindGroup,
+
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub num_indices: u32,
-    pub camera: Camera,
-    pub camera_controller: CameraController,
-    pub camera_uniform: CameraUniform,
-    pub camera_buffer: wgpu::Buffer,
-    camera_bind_group: wgpu::BindGroup,
-    pub texture_bind_group: TextureBindGroup,
+    instances: Vec<Instance>,
+    instance_buffer: wgpu::Buffer,
+
+    pub camera_bundle: CameraBundle,
 
     pub rotation_buffer: wgpu::Buffer,
     pub rotation_angle: cgmath::Rad<f32>,
     pub rotation_uniform: RotationUniform,
     rotation_bind_group: wgpu::BindGroup,
 
-    //pub gradient_buffer: wgpu::Buffer,
-    //pub gradient_source: vertex::GradientSource,
-    //gradient_bind_group: wgpu::BindGroup,
-
-    instances: Vec<Instance>,
-    instance_buffer: wgpu::Buffer,
     depth_pass: DepthPass,
     obj_model: model::Model,
     pub keys: KeyState,
+
+    light_uniform: LightUniform,
+    light_buffer: wgpu::Buffer,
 }
 
 impl State {
@@ -93,8 +94,7 @@ impl State {
             .await
             .unwrap();
         let config = wgpu::SurfaceConfiguration {
-            //usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface.get_supported_formats(&adapter)[0],
             //format: wgpu::TextureFormat::Rgba8UnormSrgb,
             width: size.width,
@@ -121,42 +121,39 @@ impl State {
         let texture_baba = Texture::from_bytes(
             &device,
             &queue,
-            include_bytes!("../img/baba-cropped-rotated.png"),
+            include_bytes!("../img/baba.png"),
             "baba-cropped-rotated.png",
         )
         .unwrap();
-        let texture_athe = Texture::from_bytes(
+        let texture_stan = Texture::from_bytes(
             &device,
             &queue,
-            include_bytes!("../img/athe-cropped-rotated.png"),
-            "athe-cropped-rotated.png",
+            include_bytes!("../img/stan.png"),
+            "stan-cropped-rotated.png",
         )
         .unwrap();
         let mut texture_bind_group = TextureBindGroup::new(&device, Some("texture_bind_group"));
         texture_bind_group.add(&device, texture_gari, "gari");
         texture_bind_group.add(&device, texture_tree, "tree");
         texture_bind_group.add(&device, texture_baba, "baba");
-        texture_bind_group.add(&device, texture_athe, "athe");
+        texture_bind_group.add(&device, texture_stan, "stan");
 
-        // Create camera and set view projection.
-        let camera_controller = CameraController::new(0.2);
-        let camera = Camera::new(config.width as f32, config.height as f32);
-        let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(&camera);
-
-        // Create camera buffer.
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera Buffer"),
-            contents: bytemuck::cast_slice(&[camera_uniform]),
+        let light_uniform = LightUniform {
+            position: [2.0, 2.0, 2.0],
+            _padding: 0,
+            color: [1.0, 1.0, 1.0],
+            _padding2: 0,
+        };
+        let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Light VB"),
+            contents: bytemuck::cast_slice(&[light_uniform]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-
-        // Create camera bind group.
-        let camera_bind_group_layout =
+        let light_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -164,16 +161,18 @@ impl State {
                     },
                     count: None,
                 }],
-                label: Some("camera_bind_group_layout"),
+                label: None,
             });
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &camera_bind_group_layout,
+        let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &light_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: camera_buffer.as_entire_binding(),
+                resource: light_buffer.as_entire_binding(),
             }],
-            label: Some("camera_bind_group"),
+            label: None,
         });
+
+        let camera_bundle = CameraBundle::new(&device, &config);
 
         // Create rotation uniform.
         let mut rotation_uniform = RotationUniform::new();
@@ -208,36 +207,6 @@ impl State {
             }],
             label: Some("rotation_bind_group"),
         });
-
-        /*
-        let gradient_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Gradient Buffer"),
-            contents: bytemuck::cast_slice(&[gradient_source.uniform]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let gradient_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-                label: Some("gradient_bind_group_layout"),
-            });
-        let gradient_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &gradient_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: gradient_buffer.as_entire_binding(),
-            }],
-            label: Some("gradient_bind_group"),
-        });
-        */
 
         // Create instances.
         const SPACE_BETWEEN: f32 = 3.0;
@@ -288,8 +257,10 @@ impl State {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
                     &texture_bind_group.layout,
-                    &camera_bind_group_layout,
+                    //&camera_bind_group_layout,
+                    &camera_bundle.layout,
                     &rotation_bind_group_layout,
+                    //&light_bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -393,21 +364,28 @@ impl State {
             vertex_buffer,
             index_buffer,
             num_indices,
-            camera,
+            //camera,
             texture_bind_group,
-            camera_uniform,
-            camera_buffer,
-            camera_bind_group,
-            camera_controller,
+
+            //camera_uniform,
+            //camera_buffer,
+            //camera_bind_group,
+            //camera_controller,
+            camera_bundle,
+
             rotation_angle,
             rotation_buffer,
             rotation_uniform,
             rotation_bind_group,
+
             instances,
             instance_buffer,
+
             depth_pass,
             obj_model,
             keys: KeyState::default(),
+            light_uniform,
+            light_buffer,
             //gradient_buffer,
             //gradient_source,
             //gradient_bind_group,
@@ -425,6 +403,7 @@ impl State {
     }
 
     pub fn update(&mut self) {
+        /*
         self.camera_controller.update_camera(&mut self.camera);
         self.camera_uniform.update_view_proj(&self.camera);
         self.queue.write_buffer(
@@ -432,6 +411,8 @@ impl State {
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
+        */
+        self.camera_bundle.update(&self.queue);
 
         if self.keys.rotate {
             self.rotation_angle += cgmath::Rad(0.05);
@@ -444,6 +425,14 @@ impl State {
         }
 
         self.depth_pass.update(&self.queue);
+
+        // Update light.
+        let old_position: cgmath::Vector3<_> = self.light_uniform.position.into();
+        self.light_uniform.position =
+            (cgmath::Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(1.0))
+                * old_position)
+                .into();
+        self.queue.write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&[self.light_uniform]));
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -479,7 +468,8 @@ impl State {
             });
 
             // Camera.
-            render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+            //render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.camera_bundle.bind_group, &[]);
             render_pass.set_bind_group(2, &self.rotation_bind_group, &[]);
 
             // Mesh.
@@ -488,7 +478,7 @@ impl State {
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
             // Tab through textures.
-            let labels = ["tree", "gari", "baba", "athe", "stone"];
+            let labels = ["tree", "gari", "baba", "stan", "stone"];
             if self.keys.tab {
                 self.keys.tab = false;
                 self.keys.tab_index = (self.keys.tab_index + 1) % labels.len();
@@ -514,7 +504,8 @@ impl State {
                 render_pass.draw_model_instanced(
                     &self.obj_model,
                     0..self.instances.len() as u32,
-                    &self.camera_bind_group,
+                    //&self.camera_bind_group,
+                    &self.camera_bundle.bind_group,
                 );
             }
         }

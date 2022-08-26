@@ -2,6 +2,7 @@ mod buffer;
 mod camera;
 mod data;
 mod depth;
+mod light;
 mod model;
 mod render;
 mod resources;
@@ -25,7 +26,7 @@ pub async fn run() {
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-            console_log::init_with_level(log::Level::Warn).expect("Couldn't initialize logger");
+            console_log::init_with_level(log::Level::Info).expect("Couldn't initialize logger");
         } else {
             env_logger::init();
         }
@@ -53,6 +54,7 @@ pub async fn run() {
             .expect("Couldn't append canvas to document body.");
     }
 
+    log::error!("NEW STATE");
     let mut state = State::new(&window).await;
 
     event_loop.run(move |event, _, control_flow| match event {
@@ -147,9 +149,9 @@ fn input(state: &mut State, event: &WindowEvent) -> bool {
                 state.keys.show_depth = !state.keys.show_depth;
                 log::info!("Z changed show_depth to {}", state.keys.show_depth);
             }
-            _ => return state.camera_controller.process_events(event),
+            _ => return state.camera_bundle.controller.process_events(event),
         },
-        _ => return state.camera_controller.process_events(event),
+        _ => return state.camera_bundle.controller.process_events(event),
     }
     true
 }
