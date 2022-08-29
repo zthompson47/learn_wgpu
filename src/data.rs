@@ -1,6 +1,7 @@
 use crate::model::ModelVertex;
 
 pub const NUM_INSTANCES_PER_ROW: u32 = 21;
+//pub const NUM_INSTANCES_PER_ROW: u32 = 1;
 
 pub const VERTICES: &[ModelVertex] = &[
     // Pentagon

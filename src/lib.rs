@@ -106,14 +106,23 @@ pub async fn run() {
 }
 
 fn input(state: &mut State, event: &WindowEvent) -> bool {
+    // FIXME needs to work outside of cursor moved events
+    state.clear_color = wgpu::Color {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    };
     match event {
         WindowEvent::CursorMoved { position: pos, .. } => {
-            state.clear_color = wgpu::Color {
-                r: (pos.x / state.size.width as f64),
-                g: (pos.y / state.size.height as f64),
-                b: (pos.y + pos.x) / (state.size.width as f64 + state.size.height as f64),
-                a: 1.0,
-            };
+            if state.keys.background {
+                state.clear_color = wgpu::Color {
+                    r: (pos.x / state.size.width as f64),
+                    g: (pos.y / state.size.height as f64),
+                    b: (pos.y + pos.x) / (state.size.width as f64 + state.size.height as f64),
+                    a: 1.0,
+                };
+            }
         }
         WindowEvent::KeyboardInput {
             input:
@@ -147,6 +156,10 @@ fn input(state: &mut State, event: &WindowEvent) -> bool {
             VirtualKeyCode::Z => {
                 state.keys.show_depth = !state.keys.show_depth;
                 log::info!("Z changed show_depth to {}", state.keys.show_depth);
+            }
+            VirtualKeyCode::B => {
+                state.keys.background = !state.keys.background;
+                log::info!("B changed background to {}", state.keys.background);
             }
             _ => return state.camera_bundle.controller.process_events(event),
         },

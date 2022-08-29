@@ -9,7 +9,7 @@ use crate::{
     data::{INDICES, NUM_INSTANCES_PER_ROW, VERTICES},
     depth::{DepthPass, RenderPass},
     light::LightUniform,
-    model::{self, DrawModel, ModelVertex, Vertex},
+    model::{self, DrawModel, Vertex},
     render, resources,
     texture::{self, Texture, TextureBindGroup},
     vertex::{Instance, InstanceRaw, RotationUniform},
@@ -25,6 +25,7 @@ pub struct KeyState {
     pub rotate: bool,
     pub tab: bool,
     pub tab_index: usize,
+    pub background: bool,
 }
 
 #[rustfmt::skip]
@@ -127,18 +128,18 @@ impl State {
             "baba-cropped-rotated.png",
         )
         .unwrap();
-        let texture_stan = Texture::from_bytes(
+        let texture_moon = Texture::from_bytes(
             &device,
             &queue,
-            include_bytes!("../img/stan.png"),
-            "stan-cropped-rotated.png",
+            include_bytes!("../img/moon.png"),
+            "moon.png",
         )
         .unwrap();
         let mut texture_bind_group = TextureBindGroup::new(&device, Some("texture_bind_group"));
         texture_bind_group.add(&device, texture_gari, "gari");
         texture_bind_group.add(&device, texture_tree, "tree");
         texture_bind_group.add(&device, texture_baba, "baba");
-        texture_bind_group.add(&device, texture_stan, "stan");
+        texture_bind_group.add(&device, texture_moon, "moon");
 
         let light_uniform = LightUniform {
             position: [2.0, 2.0, 2.0],
@@ -229,6 +230,10 @@ impl State {
                     } else {
                         cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(45.0))
                     };
+                    /*let rotation = cgmath::Quaternion::from_axis_angle(
+                        (0.0, 1.0, 0.0).into(),
+                        cgmath::Deg(180.0),
+                    );*/
 
                     Instance { position, rotation }
                 })
@@ -474,7 +479,7 @@ impl State {
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
             // Tab through textures.
-            let labels = ["tree", "gari", "baba", "stan", "stone"];
+            let labels = ["tree", "gari", "baba", "moon", "stone"];
             if self.keys.tab {
                 self.keys.tab = false;
                 self.keys.tab_index = (self.keys.tab_index + 1) % labels.len();
@@ -508,7 +513,6 @@ impl State {
                 render_pass.draw_model_instanced(
                     &self.obj_model,
                     0..self.instances.len() as u32,
-                    //&self.camera_bind_group,
                     &self.camera_bundle.bind_group,
                     &self.light_bind_group,
                 );

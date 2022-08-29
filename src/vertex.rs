@@ -1,36 +1,5 @@
 use wgpu::util::DeviceExt;
-use crate::vertex;
-/*
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Vertex {
-    pub position: [f32; 3],
-    pub tex_coords: [f32; 2],
-}
-
-impl Vertex {
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-            ],
-            // OR
-            // attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2],
-        }
-    }
-}
-*/
+use crate::{model, vertex};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -48,7 +17,6 @@ impl RotationUniform {
     }
 
     pub fn update_angle(&mut self, angle: cgmath::Rad<f32>) {
-        //self.view_proj = cgmath::Matrix4::from_angle_y(angle).into();
         self.view_proj = cgmath::Matrix4::from_angle_z(angle).into();
     }
 }
@@ -63,7 +31,6 @@ pub struct GradientSource {
     pub uniform: GradientUniform,
     gradient: colorgrad::Gradient,
     index: f64,
-    //ascending: bool,
     pub layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
     pub gradient_buffer: wgpu::Buffer,
@@ -109,7 +76,6 @@ impl GradientSource {
             bind_group,
             layout,
             gradient_buffer,
-            //ascending: true,
         }
     }
 
@@ -121,26 +87,7 @@ impl GradientSource {
             color.b as f32,
             color.a as f32,
         ];
-
         self.index = (self.index + 0.01) % 1.0;
-
-        /*
-        if self.ascending {
-            self.index += 0.01;
-        } else {
-            self.index -= 0.01;
-        }
-        if self.index >= 1.0 {
-            self.index = 1.0;
-            self.ascending = false;
-        } else if self.index <= 0.0 {
-            self.index = 0.0;
-            self.ascending = true;
-        }
-        */
-
-        //self.index = (self.index + 0.01) % 1.0;
-
         queue.write_buffer(
             &self.gradient_buffer,
             0,
@@ -158,6 +105,7 @@ pub struct Instance {
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InstanceRaw {
     model: [[f32; 4]; 4],
+    normal: [[f32; 3]; 3],
 }
 
 impl Instance {
@@ -166,12 +114,13 @@ impl Instance {
             model: (cgmath::Matrix4::from_translation(self.position)
                 * cgmath::Matrix4::from(self.rotation))
             .into(),
+            normal: cgmath::Matrix3::from(self.rotation).into(),
         }
     }
 }
 
-impl InstanceRaw {
-    pub fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
+impl model::Vertex for InstanceRaw {
+    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
         use std::mem;
         wgpu::VertexBufferLayout {
             array_stride: mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
@@ -205,6 +154,21 @@ impl InstanceRaw {
                     offset: mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
                     shader_location: 8,
                     format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 16]>() as wgpu::BufferAddress,
+                    shader_location: 9,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 19]>() as wgpu::BufferAddress,
+                    shader_location: 10,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 22]>() as wgpu::BufferAddress,
+                    shader_location: 11,
+                    format: wgpu::VertexFormat::Float32x3,
                 },
             ],
         }
