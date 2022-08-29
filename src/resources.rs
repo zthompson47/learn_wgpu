@@ -13,7 +13,8 @@ fn format_url(file_name: &str) -> reqwest::Url {
         "{}/{}/",
         location.origin().unwrap(),
         option_env!("RES_PATH").unwrap_or("res"),
-    )).unwrap();
+    ))
+    .unwrap();
     base.join(file_name).unwrap()
 }
 
@@ -92,7 +93,9 @@ pub async fn load_model(
     let mut materials = Vec::new();
     for m in obj_materials? {
         let diffuse_texture = load_texture(&m.diffuse_texture, device, queue).await?;
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let normal_texture = load_texture(&m.normal_texture, device, queue).await?;
+
+        /*let _bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -105,13 +108,15 @@ pub async fn load_model(
                 },
             ],
             label: None,
-        });
+        });*/
 
-        materials.push(model::Material {
-            name: m.name,
+        materials.push(model::Material::new(
+            device,
+            &m.name,
             diffuse_texture,
-            bind_group,
-        })
+            normal_texture,
+            layout,
+        ));
     }
 
     let meshes = models
