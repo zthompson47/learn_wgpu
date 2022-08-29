@@ -262,7 +262,6 @@ impl State {
                     label: Some("Render Pipeline Layout"),
                     bind_group_layouts: &[
                         &texture_bind_group.layout,
-                        //&camera_bind_group_layout,
                         &camera_bundle.layout,
                         &rotation_bind_group_layout,
                         &light_bind_group_layout,
@@ -275,6 +274,7 @@ impl State {
                 source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
             };
             // ^-OR: let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
+
             render::create_render_pipeline(
                 &device,
                 &render_pipeline_layout,
@@ -282,19 +282,28 @@ impl State {
                 Some(texture::Texture::DEPTH_FORMAT),
                 &[model::ModelVertex::desc(), InstanceRaw::desc()],
                 shader,
+                Some("Main Render Pipeline"),
             )
         };
 
         let light_render_pipeline = {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Light Pipeline Layout"),
-                bind_group_layouts: &[&camera_bundle.layout, &light_bind_group_layout],
+                //bind_group_layouts: &[&camera_bundle.layout, &light_bind_group_layout],
+                bind_group_layouts: &[
+                    &texture_bind_group.layout,
+                    &camera_bundle.layout,
+                    &rotation_bind_group_layout,
+                    &light_bind_group_layout,
+                ],
+
                 push_constant_ranges: &[],
             });
             let shader = wgpu::ShaderModuleDescriptor {
                 label: Some("Light Shader"),
                 source: wgpu::ShaderSource::Wgsl(include_str!("light.wgsl").into()),
             };
+
             render::create_render_pipeline(
                 &device,
                 &layout,
@@ -302,6 +311,7 @@ impl State {
                 Some(texture::Texture::DEPTH_FORMAT),
                 &[model::ModelVertex::desc()],
                 shader,
+                Some("Light Render Pipeline"),
             )
         };
 
@@ -481,9 +491,15 @@ impl State {
                 );
             };
 
-            render_pass.set_pipeline(&self.render_pipeline);
-
             use model::DrawLight;
+            render_pass.set_pipeline(&self.light_render_pipeline);
+            render_pass.draw_light_model(
+                &self.obj_model,
+                &self.camera_bundle.bind_group,
+                &self.light_bind_group,
+            );
+
+            render_pass.set_pipeline(&self.render_pipeline);
 
             // Draw.
             if self.keys.alt_shape {
