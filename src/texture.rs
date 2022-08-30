@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use anyhow::*;
 use image::GenericImageView;
 
+use crate::resources;
+
 /// Store an image on the gpu to use as a texture.
 pub struct Texture {
     pub texture: wgpu::Texture,
@@ -156,7 +158,7 @@ pub struct TextureBindGroup {
 }
 
 impl TextureBindGroup {
-    pub fn new(device: &wgpu::Device, label: Option<&str>) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, label: Option<&str>) -> Self {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 // View
@@ -185,6 +187,19 @@ impl TextureBindGroup {
             layout,
             groups: HashMap::new(),
         }
+    }
+
+    pub async fn from_files(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        filenames: Vec<&str>,
+    ) -> anyhow::Result<Self> {
+        let mut group = TextureBindGroup::new(device, queue, Some("from_files"));
+        for filename in filenames {
+            let texture = resources::load_texture(filename, device, queue).await?;
+            group.add(device, texture, filename);
+        }
+        Ok(group)
     }
 
     pub fn add(&mut self, device: &wgpu::Device, texture: Texture, label: &str) {

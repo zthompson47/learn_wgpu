@@ -21,6 +21,63 @@ impl RotationUniform {
     }
 }
 
+pub struct RotationBundle {
+    pub angle: cgmath::Rad<f32>,
+    pub uniform: RotationUniform,
+    pub buffer: wgpu::Buffer,
+    pub layout: wgpu::BindGroupLayout,
+    pub bind_group: wgpu::BindGroup,
+}
+
+impl RotationBundle {
+    pub fn new(device: &wgpu::Device) -> Self {
+        let mut uniform = RotationUniform::new();
+        let angle = cgmath::Rad(0.0); 
+        uniform.update_angle(angle);
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+             label: Some("Rotation Buffer"),
+             contents: bytemuck::cast_slice(&[uniform]),
+             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+         });
+         let layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("rotation_bind_group_layout"),
+            });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+            label: Some("rotation_bind_group"),
+        });
+
+        RotationBundle {
+            angle,
+            uniform,
+            buffer,
+            layout,
+            bind_group,
+        }
+    }
+
+    pub fn update(&mut self, queue: &wgpu::Queue) {
+        self.angle += cgmath::Rad(0.05);
+        self.uniform.update_angle(self.angle);
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.uniform]));
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GradientUniform {
