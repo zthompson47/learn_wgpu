@@ -67,7 +67,7 @@ fn vs_main(
         rotation.view_proj[2].xyz,
     );
     // Below looks off, so probably column-based..
-    let rotation_3x3_2 = transpose(rotation_3x3);
+    //let rotation_3x3_2 = transpose(rotation_3x3);
 
     var out: VertexOutput;
     out.tex_coords = model.tex_coords;

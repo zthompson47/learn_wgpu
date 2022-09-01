@@ -2,14 +2,7 @@ use wgpu::util::DeviceExt;
 
 use crate::model::{ModelVertex, Vertex};
 use crate::vertex;
-use crate::{data::DEPTH_INDICES, data::DEPTH_VERTICES, texture::Texture};
-
-pub trait RenderPass {
-    fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self;
-    fn resize(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration);
-    fn render(&mut self, view: &wgpu::TextureView, encoder: &mut wgpu::CommandEncoder);
-    fn update(&mut self, _queue: &wgpu::Queue) {}
-}
+use crate::{data::DEPTH_INDICES, data::DEPTH_VERTICES, render::RenderPass, texture::Texture};
 
 pub struct DepthPass {
     pub texture: Texture,

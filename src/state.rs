@@ -6,10 +6,10 @@ use wgpu::util::DeviceExt;
 use crate::{
     buffer, camera,
     data::{INDICES, NUM_INSTANCES_PER_ROW, VERTICES},
-    depth::{self, RenderPass},
-    light,
+    depth, light,
     model::{self, DrawLight, DrawModel, Vertex},
-    render, resources, texture,
+    render::{self, RenderPass},
+    resources, texture,
     vertex::{self, Instance, InstanceRaw},
 };
 
@@ -242,7 +242,7 @@ impl State {
             });
 
         let obj_model =
-            resources::load_model("cube.obj", &device, &queue, &texture_bind_group_layout)
+            resources::load_model("ball.obj", &device, &queue, &texture_bind_group_layout)
                 .await
                 .unwrap();
 
@@ -302,8 +302,8 @@ impl State {
             });
 
             render_pass.set_bind_group(1, &self.camera_bundle.bind_group, &[]);
-            render_pass.set_bind_group(2, &self.rotation_bundle.bind_group, &[]);
             render_pass.set_bind_group(3, &self.light_bundle.bind_group, &[]);
+            render_pass.set_bind_group(2, &self.rotation_bundle.bind_group, &[]);
 
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
@@ -314,9 +314,10 @@ impl State {
                 self.keys.tab = false;
                 self.keys.tab_index = (self.keys.tab_index + 1) % labels.len();
             }
-            let mesh = &self.obj_model.meshes[0];
-            let material = &self.obj_model.materials[mesh.material];
+
             if labels[self.keys.tab_index] == "stone" {
+                let mesh = &self.obj_model.meshes[0];
+                let material = &self.obj_model.materials[mesh.material];
                 render_pass.set_bind_group(0, &material.bind_group, &[]);
             } else {
                 render_pass.set_bind_group(
