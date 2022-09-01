@@ -37,6 +37,7 @@ pub struct State {
     pub config: wgpu::SurfaceConfiguration,
 
     pub render_pipeline: wgpu::RenderPipeline,
+    pub material_render_pipeline: wgpu::RenderPipeline,
     pub texture_bind_group: texture::TextureBindGroup,
 
     pub vertex_buffer: wgpu::Buffer,
@@ -175,13 +176,45 @@ impl State {
             )
         };
 
+        let material_bind_group_layout = device.create_bind_group_layout(&model::Material::desc());
+
+        let material_render_pipeline = {
+            let render_pipeline_layout =
+                device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Render Pipeline Layout"),
+                    bind_group_layouts: &[
+                        &material_bind_group_layout,
+                        &camera_bundle.layout,
+                        &rotation_bundle.layout,
+                        &light_bundle.layout,
+                    ],
+                    push_constant_ranges: &[],
+                });
+
+            let shader = wgpu::ShaderModuleDescriptor {
+                label: Some("normal shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("shader_mtl.wgsl").into()),
+            };
+            // ^-OR: let shader = device.create_shader_module(include_wgsl!("shader.wgsl"));
+
+            render::create_render_pipeline(
+                &device,
+                &render_pipeline_layout,
+                config.format,
+                Some(texture::Texture::DEPTH_FORMAT),
+                &[model::ModelVertex::desc(), InstanceRaw::desc()],
+                shader,
+                Some("Main Render Pipeline"),
+            )
+        };
+
         let light_render_pipeline = {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Light Pipeline Layout"),
                 bind_group_layouts: &[
-                    &texture_bind_group.layout,
+                    //&texture_bind_group.layout,
                     &camera_bundle.layout,
-                    &rotation_bundle.layout,
+                    //&rotation_bundle.layout,
                     &light_bundle.layout,
                 ],
 
@@ -216,33 +249,8 @@ impl State {
         });
         let num_indices = INDICES.len() as u32;
 
-        let texture_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    // View
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        },
-                        count: None,
-                    },
-                    // Sampler
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-                label: None,
-            });
-
         let obj_model =
-            resources::load_model("ball.obj", &device, &queue, &texture_bind_group_layout)
+            resources::load_model("moon.obj", &device, &queue, &material_bind_group_layout)
                 .await
                 .unwrap();
 
@@ -267,6 +275,7 @@ impl State {
             keys: KeyState::default(),
             light_bundle,
             light_render_pipeline,
+            material_render_pipeline,
         })
     }
 
@@ -301,13 +310,7 @@ impl State {
                 }),
             });
 
-            render_pass.set_bind_group(1, &self.camera_bundle.bind_group, &[]);
-            render_pass.set_bind_group(3, &self.light_bundle.bind_group, &[]);
-            render_pass.set_bind_group(2, &self.rotation_bundle.bind_group, &[]);
-
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
             let labels = ["tree.png", "gari.png", "baba.png", "moon.png", "stone"];
             if self.keys.tab {
@@ -315,17 +318,8 @@ impl State {
                 self.keys.tab_index = (self.keys.tab_index + 1) % labels.len();
             }
 
-            if labels[self.keys.tab_index] == "stone" {
-                let mesh = &self.obj_model.meshes[0];
-                let material = &self.obj_model.materials[mesh.material];
-                render_pass.set_bind_group(0, &material.bind_group, &[]);
-            } else {
-                render_pass.set_bind_group(
-                    0,
-                    self.texture_bind_group.get(labels[self.keys.tab_index]),
-                    &[],
-                );
-            };
+            render_pass.set_bind_group(0, &self.camera_bundle.bind_group, &[]);
+            render_pass.set_bind_group(1, &self.light_bundle.bind_group, &[]);
 
             render_pass.set_pipeline(&self.light_render_pipeline);
             render_pass.draw_light_model(
@@ -334,8 +328,26 @@ impl State {
                 &self.light_bundle.bind_group,
             );
 
-            render_pass.set_pipeline(&self.render_pipeline);
+            if labels[self.keys.tab_index] == "stone" {
+                let mesh = &self.obj_model.meshes[0];
+                let material = &self.obj_model.materials[mesh.material];
+                render_pass.set_pipeline(&self.material_render_pipeline);
+                render_pass.set_bind_group(0, &material.bind_group, &[]);
+            } else {
+                render_pass.set_pipeline(&self.render_pipeline);
+                render_pass.set_bind_group(
+                    0,
+                    self.texture_bind_group.get(labels[self.keys.tab_index]),
+                    &[],
+                );
+            };
+            render_pass.set_bind_group(1, &self.camera_bundle.bind_group, &[]);
+            render_pass.set_bind_group(2, &self.rotation_bundle.bind_group, &[]);
+            render_pass.set_bind_group(3, &self.light_bundle.bind_group, &[]);
+
             if self.keys.alt_shape {
+                render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
                 render_pass.draw_indexed(9..self.num_indices, 5, 0..self.instances.len() as u32);
             } else {
                 render_pass.draw_model_instanced(
