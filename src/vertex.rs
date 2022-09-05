@@ -72,7 +72,7 @@ impl RotationBundle {
     }
 
     pub fn update(&mut self, queue: &wgpu::Queue) {
-        self.angle += cgmath::Rad(0.05);
+        self.angle += cgmath::Rad(0.02);
         self.uniform.update_angle(self.angle);
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.uniform]));
     }

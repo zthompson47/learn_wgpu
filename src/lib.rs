@@ -34,6 +34,14 @@ pub async fn run() {
 
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
+    //let window = winit::window::Window::new(&event_loop).unwrap();
+    window.set_maximized(true);
+
+    println!(
+        "__++__ {:?} is_max:{}",
+        window.inner_size(),
+        window.is_maximized()
+    );
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -55,64 +63,93 @@ pub async fn run() {
     }
 
     let mut state = State::new(&window).await.unwrap();
+    let mut last_render_time = instant::Instant::now();
 
-    event_loop.run(move |event, _, control_flow| match event {
-        Event::WindowEvent {
-            ref event,
-            window_id,
-        } if window_id == window.id() => {
-            if !input(&mut state, event) {
-                match event {
-                    WindowEvent::CloseRequested
-                    | WindowEvent::KeyboardInput {
-                        input:
-                            KeyboardInput {
-                                state: ElementState::Pressed,
-                                virtual_keycode: Some(VirtualKeyCode::Escape),
-                                ..
-                            },
-                        ..
-                    } => *control_flow = ControlFlow::Exit,
-                    WindowEvent::Resized(physical_size) => {
-                        state.resize(*physical_size);
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::Poll;
+
+        match event {
+            Event::WindowEvent {
+                ref event,
+                window_id,
+            } if window_id == window.id() => {
+                println!("..000000000000000000000000000000000");
+                if !input(&mut state, event) {
+                    match event {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        WindowEvent::CloseRequested
+                        | WindowEvent::KeyboardInput {
+                            input:
+                                KeyboardInput {
+                                    state: ElementState::Pressed,
+                                    virtual_keycode: Some(VirtualKeyCode::Escape),
+                                    ..
+                                },
+                            ..
+                        } => *control_flow = ControlFlow::Exit,
+                        WindowEvent::Resized(physical_size) => {
+                            println!(
+                                "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!00000>{:?}",
+                                physical_size
+                            );
+                            state.resize(*physical_size);
+                        }
+                        WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                            // new_inner_size is &&mut so we have to dereference it twice
+                            state.resize(**new_inner_size);
+                        }
+                        _ => {}
                     }
-                    WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                        // new_inner_size is &&mut so we have to dereference it twice
-                        state.resize(**new_inner_size);
-                    }
-                    _ => {}
                 }
             }
-        }
-        Event::RedrawRequested(window_id) if window_id == window.id() => {
-            state.update();
-            match state.render() {
-                Ok(_) => {}
-                // Reconfigure the surface if lost
-                Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                // The system is out of memory, we should probably quit
-                Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-                // All other errors (Outdated, Timeout) should be resolved by the next frame
-                Err(e) => eprintln!("{:?}", e),
+
+            Event::RedrawRequested(window_id) if window_id == window.id() => {
+                let now = instant::Instant::now();
+                let dt = now - last_render_time;
+                last_render_time = now;
+                state.update(dt);
+                match state.render() {
+                    Ok(_) => {}
+                    // Reconfigure the surface if lost
+                    Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
+                    // The system is out of memory, we should probably quit
+                    Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
+                    // All other errors (Outdated, Timeout) should be resolved by the next frame
+                    Err(e) => eprintln!("{:?}", e),
+                }
             }
+
+            Event::MainEventsCleared => {
+                // RedrawRequested will only trigger once, unless we manually
+                // request it.
+                window.request_redraw();
+            }
+
+            Event::DeviceEvent {
+                event: DeviceEvent::MouseMotion { delta },
+                ..
+            } => {
+                if state.camera_bundle.mouse_pressed {
+                    state
+                        .camera_bundle
+                        .controller
+                        .process_mouse(delta.0, delta.1)
+                }
+            }
+
+            _ => {}
         }
-        Event::MainEventsCleared => {
-            // RedrawRequested will only trigger once, unless we manually
-            // request it.
-            window.request_redraw();
-        }
-        _ => {}
     });
 }
 
 fn input(state: &mut State, event: &WindowEvent) -> bool {
-    // FIXME needs to work outside of cursor moved events
     state.clear_color = wgpu::Color {
         r: 0.0,
         g: 0.0,
         b: 0.0,
         a: 1.0,
     };
+
     match event {
         WindowEvent::CursorMoved { position: pos, .. } => {
             if state.keys.background {
@@ -124,6 +161,19 @@ fn input(state: &mut State, event: &WindowEvent) -> bool {
                 };
             }
         }
+
+        WindowEvent::MouseWheel { delta, .. } => {
+            state.camera_bundle.controller.process_scroll(delta);
+        }
+
+        WindowEvent::MouseInput {
+            button: MouseButton::Left,
+            state: element_state,
+            ..
+        } => {
+            state.camera_bundle.mouse_pressed = *element_state == ElementState::Pressed;
+        }
+
         WindowEvent::KeyboardInput {
             input:
                 KeyboardInput {
@@ -133,9 +183,9 @@ fn input(state: &mut State, event: &WindowEvent) -> bool {
                 },
             ..
         } => match key {
-            VirtualKeyCode::Space => {
+            VirtualKeyCode::Y => {
                 state.keys.alt_shape = !state.keys.alt_shape;
-                log::info!("SPACE_BAR changed render2 to {}", state.keys.alt_shape);
+                log::info!("Y changed render2 to {}", state.keys.alt_shape);
             }
             VirtualKeyCode::Tab => {
                 state.keys.tab = !state.keys.tab;
@@ -161,9 +211,30 @@ fn input(state: &mut State, event: &WindowEvent) -> bool {
                 state.keys.background = !state.keys.background;
                 log::info!("B changed background to {}", state.keys.background);
             }
-            _ => return state.camera_bundle.controller.process_events(event),
+            _ => {
+                return state
+                    .camera_bundle
+                    .controller
+                    .process_keyboard(*key, ElementState::Pressed)
+            }
         },
-        _ => return state.camera_bundle.controller.process_events(event),
+
+        WindowEvent::KeyboardInput {
+            input:
+                KeyboardInput {
+                    state: ElementState::Released,
+                    virtual_keycode: Some(key),
+                    ..
+                },
+            ..
+        } => {
+            return state
+                .camera_bundle
+                .controller
+                .process_keyboard(*key, ElementState::Released)
+        }
+
+        _ => return false,
     }
     true
 }

@@ -22,6 +22,7 @@ png = "0.17.5"
 anyhow = "1.0.62"
 tobj = { version = "3.2.3", features = ["async"] }
 colorgrad = "0.6.1"
+instant = "0.1.12"
 
 [dependencies.image]
 version = "0.24.3"

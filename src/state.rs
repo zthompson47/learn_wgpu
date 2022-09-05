@@ -55,6 +55,8 @@ pub struct State {
 
     light_bundle: light::LightBundle,
     light_render_pipeline: wgpu::RenderPipeline,
+
+    debug_material: model::Material,
 }
 
 impl State {
@@ -101,7 +103,7 @@ impl State {
         let texture_bind_group = texture::TextureBindGroup::from_files(
             &device,
             &queue,
-            vec!["gari.png", "tree.png", "baba.png", "moon.png"],
+            vec!["gari.png", "tree.png", "baba.png", "moon-diffuse.png"],
         )
         .await?;
 
@@ -250,9 +252,39 @@ impl State {
         let num_indices = INDICES.len() as u32;
 
         let obj_model =
-            resources::load_model("moon.obj", &device, &queue, &material_bind_group_layout)
+            resources::load_model("cube.obj", &device, &queue, &material_bind_group_layout)
                 .await
                 .unwrap();
+
+        let debug_material = {
+            let diffuse_bytes = include_bytes!("../res/cobble-diffuse.png");
+            let normal_bytes = include_bytes!("../res/cobble-normal.png");
+
+            let diffuse_texture = texture::Texture::from_bytes(
+                &device,
+                &queue,
+                diffuse_bytes,
+                "res/alt-diffuse.png",
+                false,
+            )
+            .unwrap();
+            let normal_texture = texture::Texture::from_bytes(
+                &device,
+                &queue,
+                normal_bytes,
+                "res/alt-normal.png",
+                true,
+            )
+            .unwrap();
+
+            model::Material::new(
+                &device,
+                "alt-material",
+                diffuse_texture,
+                normal_texture,
+                &material_bind_group_layout,
+            )
+        };
 
         Ok(Self {
             surface,
@@ -276,6 +308,7 @@ impl State {
             light_bundle,
             light_render_pipeline,
             material_render_pipeline,
+            debug_material,
         })
     }
 
@@ -312,7 +345,13 @@ impl State {
 
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
 
-            let labels = ["tree.png", "gari.png", "baba.png", "moon.png", "stone"];
+            let labels = [
+                "tree.png",
+                "gari.png",
+                "baba.png",
+                "moon-diffuse.png",
+                "stone",
+            ];
             if self.keys.tab {
                 self.keys.tab = false;
                 self.keys.tab_index = (self.keys.tab_index + 1) % labels.len();
@@ -330,7 +369,9 @@ impl State {
 
             if labels[self.keys.tab_index] == "stone" {
                 let mesh = &self.obj_model.meshes[0];
-                let material = &self.obj_model.materials[mesh.material];
+                let _material = &self.obj_model.materials[mesh.material];
+                // DEBUG MATERIAL
+                let material = &self.debug_material;
                 render_pass.set_pipeline(&self.material_render_pipeline);
                 render_pass.set_bind_group(0, &material.bind_group, &[]);
             } else {
@@ -346,7 +387,8 @@ impl State {
             render_pass.set_bind_group(3, &self.light_bundle.bind_group, &[]);
 
             if self.keys.alt_shape {
-                render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass
+                    .set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                 render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
                 render_pass.draw_indexed(9..self.num_indices, 5, 0..self.instances.len() as u32);
             } else {
@@ -379,6 +421,7 @@ impl State {
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        println!("RESIZE: {:?}", new_size);
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
             self.config.width = new_size.width;
@@ -386,10 +429,13 @@ impl State {
             self.surface.configure(&self.device, &self.config);
         }
         self.depth_pass.resize(&self.device, &self.config);
+        self.camera_bundle
+            .projection
+            .resize(new_size.width, new_size.height);
     }
 
-    pub fn update(&mut self) {
-        self.camera_bundle.update(&self.queue);
+    pub fn update(&mut self, dt: instant::Duration) {
+        self.camera_bundle.update(&self.queue, dt);
         if self.keys.rotate {
             self.rotation_bundle.update(&self.queue);
         }
