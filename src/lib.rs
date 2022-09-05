@@ -37,11 +37,11 @@ pub async fn run() {
     //let window = winit::window::Window::new(&event_loop).unwrap();
     window.set_maximized(true);
 
-    println!(
+    /*println!(
         "__++__ {:?} is_max:{}",
         window.inner_size(),
         window.is_maximized()
-    );
+    );*/
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -73,7 +73,7 @@ pub async fn run() {
                 ref event,
                 window_id,
             } if window_id == window.id() => {
-                println!("..000000000000000000000000000000000");
+                //println!("..000000000000000000000000000000000");
                 if !input(&mut state, event) {
                     match event {
                         #[cfg(not(target_arch = "wasm32"))]
@@ -88,10 +88,10 @@ pub async fn run() {
                             ..
                         } => *control_flow = ControlFlow::Exit,
                         WindowEvent::Resized(physical_size) => {
-                            println!(
+                            /*println!(
                                 "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!00000>{:?}",
                                 physical_size
-                            );
+                            );*/
                             state.resize(*physical_size);
                         }
                         WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {

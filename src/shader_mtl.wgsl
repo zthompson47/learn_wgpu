@@ -54,24 +54,19 @@ fn vs_main(
         instance.model_matrix_1,
         instance.model_matrix_2,
         instance.model_matrix_3,
+    ) * rotation.view_proj;
+
+    let rotation_3x3 = mat3x3<f32>(
+        rotation.view_proj[0].xyz,
+        rotation.view_proj[1].xyz,
+        rotation.view_proj[2].xyz,
     );
 
     let normal_matrix = mat3x3<f32>(
         instance.normal_matrix_0,
         instance.normal_matrix_1,
         instance.normal_matrix_2,
-    );
-
-    // FIXME Not sure if it's build by column vectors..
-    // Seems to work though..
-    //let rotation_3x3 = mat3x3<f32>(
-    //    rotation.view_proj[0].xyz,
-    //    rotation.view_proj[1].xyz,
-    //    rotation.view_proj[2].xyz,
-    //);
-    // Below looks off, so probably column-based..
-    //let rotation_3x3_2 = transpose(rotation_3x3);
-
+    ) * rotation_3x3;
 
     // Construct the tangent matrix.
     let world_normal = normalize(normal_matrix * model.normal);
@@ -83,8 +78,8 @@ fn vs_main(
         world_normal,
     ));
 
-    let world_position = model_matrix * rotation.view_proj * vec4<f32>(model.position, 1.0);
-    //let world_position = model_matrix * vec4<f32>(model.position, 1.0);
+    //let world_position = model_matrix * rotation.view_proj * vec4<f32>(model.position, 1.0);
+    let world_position = model_matrix * vec4<f32>(model.position, 1.0);
 
     var out: VertexOutput;
     out.clip_position = camera.view_proj * world_position;
@@ -93,31 +88,6 @@ fn vs_main(
     out.tangent_view_position = tangent_matrix * camera.view_pos.xyz;
     out.tangent_light_position = tangent_matrix * light.position;
     return out;
-
-    //var out: VertexOutput;
-    //out.tex_coords = model.tex_coords;
-
-    //out.world_normal =
-    //    (normal_matrix * rotation_3x3)
-    //    * model.normal;
-    // OR, if uniform scaling only:
-    //out.world_normal = (
-    //    (model_matrix * rotation.view_proj)
-    //    * vec4<f32>(model.normal, 0.0)
-    //).xyz;
-
-    /*
-    var world_position: vec4<f32> =
-        model_matrix
-        * vec4<f32>(model.position, 1.0);
-	*/
-    //out.world_position = world_position.xyz;
-
-    //out.clip_position =
-    //    camera.view_proj
-    //    * model_matrix
-    //    * rotation.view_proj
-    //    * vec4<f32>(model.position, 1.0);
 }
 
 @group(0) @binding(0)
@@ -131,7 +101,6 @@ var s_normal: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    //return textureSample(t_diffuse, s_diffuse, in.tex_coords);
     let object_color: vec4<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords);
     let object_normal: vec4<f32> = textureSample(t_normal, s_normal, in.tex_coords);
 
@@ -140,8 +109,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ambient_color = light.color * ambient_strength;
 
     let tangent_normal = object_normal.xyz * 2.0 - 1.0;
-    //let light_dir = normalize(light.position - in.world_position);
-    //let view_dir = normalize(camera.view_pos.xyz - in.world_position);
     let light_dir = normalize(in.tangent_light_position - in.tangent_position);
     let view_dir = normalize(in.tangent_view_position - in.tangent_position);
     // https://learnopengl.com/Advanced-Lighting/Advanced-Lighting

@@ -421,7 +421,7 @@ impl State {
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        println!("RESIZE: {:?}", new_size);
+        //println!("RESIZE: {:?}", new_size);
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
             self.config.width = new_size.width;
@@ -440,7 +440,7 @@ impl State {
             self.rotation_bundle.update(&self.queue);
         }
         self.depth_pass.update(&self.queue);
-        self.light_bundle.update(&self.queue);
+        self.light_bundle.update(&self.queue, dt);
     }
 
     fn create_screenshot(
